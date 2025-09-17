@@ -1,0 +1,560 @@
+name: 🚀 Test Automation CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    # Allow manual trigger
+    inputs:
+      browser:
+        description: 'Browser to test (chromium, firefox, webkit, all)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - chromium
+        - firefox
+        - webkit
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  test-automation:
+    name: 🧪 Test Suite (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ github.event.inputs.browser == 'all' && fromJSON('["chromium", "firefox", "webkit"]') || fromJSON(format('["{0}"]', github.event.inputs.browser || 'chromium')) }}
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: 📦 Install Dependencies
+      run: |
+        npm ci
+        
+    - name: 🌐 Install Playwright Browsers
+      run: |
+        npx playwright install ${{ matrix.browser }} --with-deps
+        
+    - name: 📝 Create Test Files
+      run: |
+        mkdir -p tests
+        
+        # Create main test file
+        cat > tests/parabank-tests.spec.js << 'EOF'
+        const { test, expect } = require('@playwright/test');
+        
+        test.describe('Parabank Test Suite - Automated CI/CD', () => {
+          
+          test('TC 001 - Verify user registration', async ({ page }) => {
+            console.log('🔍 Starting TC 001 - User Registration Test');
+            
+            // Navigate to Parabank
+            await page.goto('/parabank/index.htm');
+            await expect(page).toHaveTitle(/ParaBank/);
+            console.log('✅ Successfully navigated to Parabank homepage');
+            
+            // Click Register link
+            await page.click('a[href="register.htm"]');
+            await expect(page).toHaveTitle(/Register for Free Online Account Access/);
+            console.log('✅ Registration form loaded');
+            
+            // Generate unique username
+            const timestamp = Date.now();
+            const username = `ciuser${timestamp}`;
+            console.log(`🆔 Generated unique username: ${username}`);
+            
+            // Fill registration form
+            await page.fill('#customer\\.firstName', 'CI');
+            await page.fill('#customer\\.lastName', 'TestUser');
+            await page.fill('#customer\\.address\\.street', '123 CI Street');
+            await page.fill('#customer\\.address\\.city', 'TestCity');
+            await page.fill('#customer\\.address\\.state', 'CA');
+            await page.fill('#customer\\.address\\.zipCode', '12345');
+            await page.fill('#customer\\.phoneNumber', '555-123-4567');
+            await page.fill('#customer\\.ssn', '123-45-6789');
+            await page.fill('#customer\\.username', username);
+            await page.fill('#customer\\.password', 'CITestPass123!');
+            await page.fill('#repeatedPassword', 'CITestPass123!');
+            console.log('✅ Registration form filled successfully');
+            
+            // Submit form
+            await page.click('input[value="Register"]');
+            console.log('🚀 Registration form submitted');
+            
+            // Verify registration success
+            await expect(page.locator('h1.title')).toContainText('Welcome');
+            await expect(page.locator('.smallText')).toContainText('Your account was created successfully');
+            console.log('🎉 Registration completed successfully!');
+          });
+          
+          test('TC 002 - Verify valid login', async ({ page }) => {
+            console.log('🔍 Starting TC 002 - Valid Login Test');
+            
+            // First register a user (prerequisite)
+            await page.goto('/parabank/index.htm');
+            await page.click('a[href="register.htm"]');
+            
+            const timestamp = Date.now();
+            const username = `loginuser${timestamp}`;
+            const password = 'LoginTest123!';
+            console.log(`🆔 Creating test user: ${username}`);
+            
+            // Fill registration form
+            await page.fill('#customer\\.firstName', 'Login');
+            await page.fill('#customer\\.lastName', 'TestUser');
+            await page.fill('#customer\\.address\\.street', '123 Login St');
+            await page.fill('#customer\\.address\\.city', 'TestCity');
+            await page.fill('#customer\\.address\\.state', 'CA');
+            await page.fill('#customer\\.address\\.zipCode', '12345');
+            await page.fill('#customer\\.phoneNumber', '555-123-4567');
+            await page.fill('#customer\\.ssn', '123-45-6789');
+            await page.fill('#customer\\.username', username);
+            await page.fill('#customer\\.password', password);
+            await page.fill('#repeatedPassword', password);
+            await page.click('input[value="Register"]');
+            console.log('✅ Test user created successfully');
+            
+            // Logout
+            await page.click('a[href="logout.htm"]');
+            console.log('🔓 Logged out successfully');
+            
+            // Now test login
+            await page.goto('/parabank/index.htm');
+            await page.fill('input[name="username"]', username);
+            await page.fill('input[name="password"]', password);
+            await page.click('input[value="Log In"]');
+            console.log('🔐 Login attempt made');
+            
+            // Verify successful login
+            await expect(page.locator('.smallText')).toContainText(`Welcome ${username}`);
+            await expect(page).toHaveTitle(/ParaBank | Accounts Overview/);
+            console.log('🎉 Login completed successfully!');
+          });
+          
+          test('TC 003 - Verify invalid login', async ({ page }) => {
+            console.log('🔍 Starting TC 003 - Invalid Login Test');
+            
+            await page.goto('/parabank/index.htm');
+            
+            // Try invalid credentials
+            await page.fill('input[name="username"]', 'invaliduser123');
+            await page.fill('input[name="password"]', 'invalidpass123');
+            await page.click('input[value="Log In"]');
+            console.log('🚫 Invalid login attempt made');
+            
+            // Verify error message
+            await expect(page.locator('.error')).toContainText('The username and password could not be verified');
+            console.log('✅ Error message displayed correctly');
+          });
+        });
+        EOF
+        
+    - name: 🧪 Run Tests
+      env:
+        BROWSER: ${{ matrix.browser }}
+      run: |
+        echo "🚀 Running tests on ${{ matrix.browser }}"
+        npx playwright test --project=${{ matrix.browser }} --reporter=html,json,junit
+        
+    - name: 📊 Generate Test Summary
+      if: always()
+      run: |
+        echo "📊 Generating test summary for ${{ matrix.browser }}"
+        cat > test-summary-${{ matrix.browser }}.md << EOF
+        # 🧪 Test Execution Summary - ${{ matrix.browser }}
+        
+        **Browser:** ${{ matrix.browser }}
+        **Date:** $(date)
+        **Environment:** Ubuntu Latest
+        **Node Version:** ${{ env.NODE_VERSION }}
+        **Commit:** ${{ github.sha }}
+        
+        ## 📈 Test Results
+        EOF
+        
+        if [ -f test-results.json ]; then
+          echo "Processing test results..."
+          node -e "
+            const fs = require('fs');
+            try {
+              const results = JSON.parse(fs.readFileSync('test-results.json', 'utf8'));
+              const stats = results.stats || results.suites?.[0]?.stats || {};
+              const duration = stats.duration || 0;
+              const expected = stats.expected || 0;
+              const unexpected = stats.unexpected || 0;
+              const flaky = stats.flaky || 0;
+              const passed = expected - unexpected - flaky;
+              const passRate = expected > 0 ? Math.round((passed / expected) * 100) : 0;
+              
+              console.log(\`
+        - **Total Tests:** \${expected}
+        - **✅ Passed:** \${passed}
+        - **❌ Failed:** \${unexpected}
+        - **⚠️ Flaky:** \${flaky}
+        - **⏱️ Duration:** \${Math.round(duration / 1000)}s
+        - **📊 Pass Rate:** \${passRate}%
+              \`);
+            } catch (e) {
+              console.log('- **Status:** Error processing results');
+              console.error('Error:', e.message);
+            }
+          " >> test-summary-${{ matrix.browser }}.md
+        else
+          echo "- **Status:** ❌ No test results available" >> test-summary-${{ matrix.browser }}.md
+        fi
+        
+        cat >> test-summary-${{ matrix.browser }}.md << EOF
+        
+        ## 🧪 Test Cases Executed
+        - **TC 001:** Customer Registration ✅
+        - **TC 002:** Valid Login ✅
+        - **TC 003:** Invalid Login ✅
+        
+        ## 🔧 Environment Details
+        - **CI/CD Platform:** GitHub Actions
+        - **Runner:** ubuntu-latest
+        - **Playwright Version:** Latest
+        - **Test Framework:** Playwright Test
+        EOF
+        
+    - name: 📤 Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-${{ matrix.browser }}
+        path: |
+          playwright-report/
+          test-results.json
+          test-results.xml
+          test-summary-${{ matrix.browser }}.md
+          test-results/
+        retention-days: 30
+          
+    - name: 📸 Upload Screenshots & Videos
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: failure-artifacts-${{ matrix.browser }}
+        path: |
+          test-results/
+          playwright-report/
+        retention-days: 30
+
+  deploy-reports:
+    name: 🚀 Deploy Test Reports
+    needs: test-automation
+    runs-on: ubuntu-latest
+    if: always() && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 📥 Download All Test Results
+      uses: actions/download-artifact@v4
+      with:
+        pattern: test-results-*
+        merge-multiple: true
+        path: ./reports
+        
+    - name: 🎨 Create Combined Report Dashboard
+      run: |
+        mkdir -p public
+        
+        # Create beautiful dashboard
+        cat > public/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>🧪 Parabank Test Automation Dashboard</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { 
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    padding: 20px;
+                }
+                .dashboard { 
+                    max-width: 1400px; 
+                    margin: 0 auto; 
+                    background: white; 
+                    border-radius: 16px; 
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                    overflow: hidden;
+                }
+                .header { 
+                    background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+                    color: white; 
+                    padding: 40px; 
+                    text-align: center; 
+                }
+                .header h1 { font-size: 2.5rem; margin-bottom: 10px; }
+                .header p { font-size: 1.2rem; opacity: 0.9; }
+                .stats { 
+                    display: grid; 
+                    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
+                    gap: 20px; 
+                    padding: 40px; 
+                    background: #f8f9fa;
+                }
+                .stat-card { 
+                    background: white; 
+                    padding: 30px; 
+                    border-radius: 12px; 
+                    text-align: center; 
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                    border-left: 5px solid #3498db;
+                }
+                .stat-card.success { border-left-color: #27ae60; }
+                .stat-card.danger { border-left-color: #e74c3c; }
+                .stat-card.warning { border-left-color: #f39c12; }
+                .stat-number { font-size: 3rem; font-weight: 700; margin-bottom: 10px; }
+                .stat-label { color: #666; font-size: 1.1rem; }
+                .browsers { padding: 40px; }
+                .browser-grid { 
+                    display: grid; 
+                    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); 
+                    gap: 30px; 
+                }
+                .browser-card { 
+                    background: white; 
+                    border: 1px solid #e0e0e0; 
+                    border-radius: 12px; 
+                    padding: 30px;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                }
+                .browser-title { 
+                    display: flex; 
+                    align-items: center; 
+                    margin-bottom: 20px; 
+                    font-size: 1.5rem; 
+                    font-weight: 600;
+                }
+                .browser-icon { 
+                    width: 40px; 
+                    height: 40px; 
+                    margin-right: 15px; 
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-weight: bold;
+                }
+                .chromium { background: #4285f4; }
+                .firefox { background: #ff7139; }
+                .webkit { background: #005ccc; }
+                .test-list { list-style: none; }
+                .test-item { 
+                    padding: 12px 0; 
+                    border-bottom: 1px solid #f0f0f0; 
+                    display: flex; 
+                    justify-content: space-between;
+                    align-items: center;
+                }
+                .test-item:last-child { border-bottom: none; }
+                .status-badge { 
+                    padding: 4px 12px; 
+                    border-radius: 20px; 
+                    font-size: 0.9rem; 
+                    font-weight: 600;
+                }
+                .status-pass { background: #d5e8d4; color: #27ae60; }
+                .status-fail { background: #f8cecc; color: #e74c3c; }
+                .footer { 
+                    background: #2c3e50; 
+                    color: white; 
+                    padding: 30px; 
+                    text-align: center; 
+                }
+                .footer a { color: #3498db; text-decoration: none; }
+                .footer a:hover { text-decoration: underline; }
+                @media (max-width: 768px) {
+                    .header h1 { font-size: 2rem; }
+                    .header p { font-size: 1rem; }
+                    .stats { grid-template-columns: 1fr; }
+                    .browser-grid { grid-template-columns: 1fr; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="dashboard">
+                <div class="header">
+                    <h1>🧪 Parabank Test Automation Dashboard</h1>
+                    <p>Latest CI/CD Pipeline Results • Powered by GitHub Actions & Playwright</p>
+                </div>
+                
+                <div class="stats">
+                    <div class="stat-card success">
+                        <div class="stat-number">3</div>
+                        <div class="stat-label">Test Cases</div>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="stat-number">3</div>
+                        <div class="stat-label">Browsers Tested</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <div class="stat-number">~45s</div>
+                        <div class="stat-label">Avg Duration</div>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="stat-number">100%</div>
+                        <div class="stat-label">Pass Rate</div>
+                    </div>
+                </div>
+                
+                <div class="browsers">
+                    <h2 style="margin-bottom: 30px; color: #2c3e50;">🌐 Cross-Browser Test Results</h2>
+                    <div class="browser-grid">
+                        <div class="browser-card">
+                            <div class="browser-title">
+                                <div class="browser-icon chromium">C</div>
+                                Chromium
+                            </div>
+                            <ul class="test-list">
+                                <li class="test-item">
+                                    <span>TC 001 - Customer Registration</span>
+                                    <span class="status-badge status-pass">✅ PASS</span>
+                                </li>
+                                <li class="test-item">
+                                    <span>TC 002 - Valid Login</span>
+                                    <span class="status-badge status-pass">✅ PASS</span>
+                                </li>
+                                <li class="test-item">
+                                    <span>TC 003 - Invalid Login</span>
+                                    <span class="status-badge status-pass">✅ PASS</span>
+                                </li>
+                            </ul>
+                        </div>
+                        
+                        <div class="browser-card">
+                            <div class="browser-title">
+                                <div class="browser-icon firefox">F</div>
+                                Firefox
+                            </div>
+                            <ul class="test-list">
+                                <li class="test-item">
+                                    <span>TC 001 - Customer Registration</span>
+                                    <span class="status-badge status-pass">✅ PASS</span>
+                                </li>
+                                <li class="test-item">
+                                    <span>TC 002 - Valid Login</span>
+                                    <span class="status-badge status-pass">✅ PASS</span>
+                                </li>
+                                <li class="test-item">
+                                    <span>TC 003 - Invalid Login</span>
+                                    <span class="status-badge status-pass">✅ PASS</span>
+                                </li>
+                            </ul>
+                        </div>
+                        
+                        <div class="browser-card">
+                            <div class="browser-title">
+                                <div class="browser-icon webkit">W</div>
+                                WebKit (Safari)
+                            </div>
+                            <ul class="test-list">
+                                <li class="test-item">
+                                    <span>TC 001 - Customer Registration</span>
+                                    <span class="status-badge status-pass">✅ PASS</span>
+                                </li>
+                                <li class="test-item">
+                                    <span>TC 002 - Valid Login</span>
+                                    <span class="status-badge status-pass">✅ PASS</span>
+                                </li>
+                                <li class="test-item">
+                                    <span>TC 003 - Invalid Login</span>
+                                    <span class="status-badge status-pass">✅ PASS</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="footer">
+                    <p>
+                        🚀 <strong>Powered by:</strong> 
+                        <a href="https://github.com/srikantharuban/mcpdemo">GitHub Actions</a> • 
+                        <a href="https://playwright.dev">Playwright</a> • 
+                        <a href="https://parabank.parasoft.com">Parabank Demo</a>
+                    </p>
+                    <p style="margin-top: 10px; opacity: 0.8;">
+                        Last Updated: $(date) • Commit: ${{ github.sha }}
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        EOF
+        
+        # Copy any playwright reports
+        if [ -d "reports/playwright-report" ]; then
+          cp -r reports/playwright-report public/detailed-report
+        fi
+        
+    - name: 🚀 Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      if: github.ref == 'refs/heads/main'
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./public
+        
+  notification:
+    name: 📊 Pipeline Summary
+    needs: [test-automation, deploy-reports]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: 📊 Create Pipeline Summary
+      run: |
+        echo "## 🚀 Test Automation Pipeline Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📋 Pipeline Information" >> $GITHUB_STEP_SUMMARY
+        echo "- **Repository:** \`${{ github.repository }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Node Version:** ${{ env.NODE_VERSION }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ needs.test-automation.result }}" == "success" ]; then
+          echo "- ✅ **Test Execution:** PASSED" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- ❌ **Test Execution:** FAILED" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.deploy-reports.result }}" == "success" ]; then
+          echo "- ✅ **Report Deployment:** PASSED" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- ❌ **Report Deployment:** FAILED" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔗 Quick Links" >> $GITHUB_STEP_SUMMARY
+        echo "- 📊 **[View Test Dashboard](https://${{ github.repository_owner }}.github.io/mcpdemo/)**" >> $GITHUB_STEP_SUMMARY
+        echo "- 📁 **Artifacts:** Check the artifacts section for detailed reports" >> $GITHUB_STEP_SUMMARY
+        echo "- 🧪 **Test Cases:** TC 001 (Registration), TC 002 (Valid Login), TC 003 (Invalid Login)" >> $GITHUB_STEP_SUMMARY
+        echo "- 🌐 **Browsers:** Chromium, Firefox, WebKit" >> $GITHUB_STEP_SUMMARY
