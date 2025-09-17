@@ -50,3 +50,14 @@
 - Verify that account details are displayed
 - Verify that account numbers are visible
 - Verify that account balances are displayed
+
+## TC 005 - Verify "Open New Account" functionality
+
+- Navigate to `https://parabank.parasoft.com/parabank/index.htm`
+- Login with valid credentials
+- Click on "Open New Account" link
+- Select account type (Checking or Savings)
+- Select funding account from dropdown
+- Click on "Open New Account" button
+- Verify that new account is created successfully
+- Verify that account number is generated and displayed
