@@ -1,0 +1,46 @@
+{
+  "name": "parabank-test-automation",
+  "version": "1.0.0",
+  "description": "Automated test suite for Parabank application using Playwright",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:chromium": "playwright test --project=chromium",
+    "test:firefox": "playwright test --project=firefox",
+    "test:webkit": "playwright test --project=webkit",
+    "test:ci": "playwright test --reporter=html,json,junit",
+    "report": "playwright show-report",
+    "install-browsers": "playwright install",
+    "setup": "npm install && npx playwright install"
+  },
+  "keywords": [
+    "playwright",
+    "automation",
+    "testing",
+    "parabank",
+    "e2e",
+    "ci-cd",
+    "github-actions"
+  ],
+  "author": "Test Automation Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/srikantharuban/mcpdemo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/srikantharuban/mcpdemo/issues"
+  },
+  "homepage": "https://github.com/srikantharuban/mcpdemo#readme"
+}
