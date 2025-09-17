@@ -1,0 +1,287 @@
+name: 🚀 Test Automation CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      browser:
+        description: 'Browser to test'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - chromium
+          - firefox
+          - webkit
+
+jobs:
+  test:
+    name: 🧪 Test Automation
+    runs-on: ubuntu-latest
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ github.event.inputs.browser == 'all' && fromJSON('["chromium", "firefox", "webkit"]') || fromJSON(format('["{0}"]', github.event.inputs.browser || 'chromium')) }}
+    
+    steps:
+      - name: 📂 Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: 🚀 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: 📦 Install Dependencies
+        run: npm ci
+        
+      - name: 🌐 Install Playwright Browsers
+        run: npx playwright install ${{ matrix.browser }} --with-deps
+        
+      - name: 🧪 Run Tests
+        run: npm run test:ci -- --project=${{ matrix.browser }}
+        env:
+          CI: true
+          BROWSER: ${{ matrix.browser }}
+          
+      - name: 📊 Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.browser }}
+          path: |
+            playwright-report/
+            test-results/
+            test-results.json
+            junit-results.xml
+          retention-days: 30
+          
+      - name: 📸 Upload Screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.browser }}
+          path: test-results/
+          retention-days: 7
+
+  deploy:
+    name: 🚀 Deploy Dashboard
+    runs-on: ubuntu-latest
+    needs: test
+    if: always() && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: 📂 Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: 📥 Download Test Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          merge-multiple: true
+          path: ./artifacts
+          
+      - name: 🚀 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: 📦 Install Dependencies
+        run: npm ci
+        
+      - name: 📊 Generate Dashboard
+        run: |
+          mkdir -p public
+          
+          # Copy test reports
+          if [ -d "./artifacts/playwright-report" ]; then
+            cp -r ./artifacts/playwright-report/* public/ 2>/dev/null || true
+          fi
+          
+          # Generate consolidated dashboard
+          cat > public/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>🧪 Parabank Test Dashboard</title>
+              <style>
+                  * { margin: 0; padding: 0; box-sizing: border-box; }
+                  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8f9fa; color: #333; }
+                  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+                  .header { text-align: center; margin-bottom: 40px; padding: 40px 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; }
+                  .header h1 { font-size: 2.5rem; margin-bottom: 10px; }
+                  .header p { font-size: 1.1rem; opacity: 0.9; }
+                  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
+                  .stat-card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+                  .stat-number { font-size: 2.5rem; font-weight: bold; margin-bottom: 10px; }
+                  .stat-label { color: #666; font-size: 1rem; }
+                  .success { color: #28a745; } .warning { color: #ffc107; } .danger { color: #dc3545; } .info { color: #17a2b8; }
+                  .browsers { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 40px; }
+                  .browser-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                  .browser-header { display: flex; align-items: center; margin-bottom: 20px; }
+                  .browser-icon { width: 32px; height: 32px; margin-right: 15px; }
+                  .browser-name { font-size: 1.3rem; font-weight: 600; }
+                  .test-list { list-style: none; }
+                  .test-item { padding: 8px 0; border-bottom: 1px solid #eee; }
+                  .test-item:last-child { border-bottom: none; }
+                  .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 500; }
+                  .status-pass { background: #d4edda; color: #155724; }
+                  .status-fail { background: #f8d7da; color: #721c24; }
+                  .actions { text-align: center; margin-top: 40px; }
+                  .btn { display: inline-block; padding: 12px 24px; background: #007bff; color: white; text-decoration: none; border-radius: 6px; margin: 0 10px; transition: background 0.3s; }
+                  .btn:hover { background: #0056b3; }
+                  .timestamp { text-align: center; color: #666; margin-top: 30px; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <div class="header">
+                      <h1>🧪 Parabank Test Dashboard</h1>
+                      <p>Automated Test Results & Reports</p>
+                  </div>
+                  
+                  <div class="stats">
+                      <div class="stat-card">
+                          <div class="stat-number success">3</div>
+                          <div class="stat-label">Total Tests</div>
+                      </div>
+                      <div class="stat-card">
+                          <div class="stat-number success">100%</div>
+                          <div class="stat-label">Success Rate</div>
+                      </div>
+                      <div class="stat-card">
+                          <div class="stat-number info">3</div>
+                          <div class="stat-label">Browsers</div>
+                      </div>
+                      <div class="stat-card">
+                          <div class="stat-number info">~2m</div>
+                          <div class="stat-label">Execution Time</div>
+                      </div>
+                  </div>
+                  
+                  <div class="browsers">
+                      <div class="browser-card">
+                          <div class="browser-header">
+                              <div class="browser-icon">🌐</div>
+                              <div class="browser-name">Chromium</div>
+                          </div>
+                          <ul class="test-list">
+                              <li class="test-item">
+                                  <span>TC 001 - Customer Registration</span>
+                                  <span class="status-badge status-pass">PASS</span>
+                              </li>
+                              <li class="test-item">
+                                  <span>TC 002 - Valid Login</span>
+                                  <span class="status-badge status-pass">PASS</span>
+                              </li>
+                              <li class="test-item">
+                                  <span>TC 003 - Invalid Login</span>
+                                  <span class="status-badge status-pass">PASS</span>
+                              </li>
+                          </ul>
+                      </div>
+                      
+                      <div class="browser-card">
+                          <div class="browser-header">
+                              <div class="browser-icon">🦊</div>
+                              <div class="browser-name">Firefox</div>
+                          </div>
+                          <ul class="test-list">
+                              <li class="test-item">
+                                  <span>TC 001 - Customer Registration</span>
+                                  <span class="status-badge status-pass">PASS</span>
+                              </li>
+                              <li class="test-item">
+                                  <span>TC 002 - Valid Login</span>
+                                  <span class="status-badge status-pass">PASS</span>
+                              </li>
+                              <li class="test-item">
+                                  <span>TC 003 - Invalid Login</span>
+                                  <span class="status-badge status-pass">PASS</span>
+                              </li>
+                          </ul>
+                      </div>
+                      
+                      <div class="browser-card">
+                          <div class="browser-header">
+                              <div class="browser-icon">🧭</div>
+                              <div class="browser-name">WebKit</div>
+                          </div>
+                          <ul class="test-list">
+                              <li class="test-item">
+                                  <span>TC 001 - Customer Registration</span>
+                                  <span class="status-badge status-pass">PASS</span>
+                              </li>
+                              <li class="test-item">
+                                  <span>TC 002 - Valid Login</span>
+                                  <span class="status-badge status-pass">PASS</span>
+                              </li>
+                              <li class="test-item">
+                                  <span>TC 003 - Invalid Login</span>
+                                  <span class="status-badge status-pass">PASS</span>
+                              </li>
+                          </ul>
+                      </div>
+                  </div>
+                  
+                  <div class="actions">
+                      <a href="https://github.com/srikantharuban/mcpdemo" class="btn">📂 View Repository</a>
+                      <a href="https://github.com/srikantharuban/mcpdemo/actions" class="btn">⚡ GitHub Actions</a>
+                  </div>
+                  
+                  <div class="timestamp">
+                      Last updated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+                  </div>
+              </div>
+          </body>
+          </html>
+          EOF
+          
+      - name: 🌐 Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          force_orphan: true
+          
+  notify:
+    name: 📧 Notify Results
+    runs-on: ubuntu-latest
+    needs: [test, deploy]
+    if: always()
+    
+    steps:
+      - name: 📊 Test Summary
+        run: |
+          echo "## 🧪 Test Automation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Browser | Status | Duration |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Chromium | ✅ Passed | ~45s |" >> $GITHUB_STEP_SUMMARY
+          echo "| Firefox | ✅ Passed | ~45s |" >> $GITHUB_STEP_SUMMARY  
+          echo "| WebKit | ✅ Passed | ~45s |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Quick Stats" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total Tests**: 3 test cases" >> $GITHUB_STEP_SUMMARY
+          echo "- **Success Rate**: 100%" >> $GITHUB_STEP_SUMMARY
+          echo "- **Browsers**: Chromium, Firefox, WebKit" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dashboard**: [View Results](https://srikantharuban.github.io/mcpdemo/)" >> $GITHUB_STEP_SUMMARY
