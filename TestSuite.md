@@ -41,3 +41,12 @@
 - Click on the "Log In" button
 - Verify that appropriate error message is displayed
 - Verify that user remains on the login page
+
+## TC 004 - Verify account overview functionality
+
+- Navigate to `https://parabank.parasoft.com/parabank/index.htm`
+- Login with valid credentials
+- Click on "Accounts Overview" link
+- Verify that account details are displayed
+- Verify that account numbers are visible
+- Verify that account balances are displayed
