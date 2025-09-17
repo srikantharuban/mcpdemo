@@ -32,3 +32,12 @@
 - Click on the "Log In" button
 - Verify that user is successfully logged in and account overview page is displayed
 - Verify that "Welcome [username]" message is displayed
+
+## TC 003 - Verify user login functionality with invalid credentials
+
+- Navigate to `https://parabank.parasoft.com/parabank/index.htm`
+- Enter invalid username in the username field
+- Enter invalid password in the password field
+- Click on the "Log In" button
+- Verify that appropriate error message is displayed
+- Verify that user remains on the login page
